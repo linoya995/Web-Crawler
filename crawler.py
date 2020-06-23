@@ -96,6 +96,9 @@ class Crawler:
         result = []
         device_id = 1
         soup = self.__create_soup(root_url)
+        if soup is None:
+            print("Error: root_url request failed.")
+            exit()
 
         # Find firmware download page
         download_page_link = soup.find_all('a', title="Download")[0].get('href')
@@ -171,10 +174,7 @@ class Crawler:
         # Collect download link
         download_link = soup.find('a', {'href': lambda x: x and ".zip" in x})
         if download_link is not None:
-            download_name = download_link.text
             download_link = download_link.get('href')
-        else:
-            download_name = None
 
         # Insert data to dictionary
         data['device_id'] = device_id
@@ -183,6 +183,5 @@ class Crawler:
         data['device_name'] = device_name
         data['build_date'] = build_date
         data['file_download_link'] = download_link
-        data['file_name'] = download_name
 
         return data
