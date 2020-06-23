@@ -1,7 +1,7 @@
-import datetime
 import hashlib
 import requests
 from bs4 import BeautifulSoup
+import threading
 
 SUCCESS_STATUS = 200
 
@@ -14,7 +14,7 @@ class Crawler:
     """
 
     def __init__(self):
-        print('')
+        pass
 
     def __create_soup(self, url):
         """
@@ -24,11 +24,17 @@ class Crawler:
         """
 
         # Try to get a web page
-        req = requests.get(url)
+        try:
+            req = requests.get(url)
+
+        # catch *all* exceptions
+        except Exception as e:
+            print("Error: %s" % str(e))
+            return
 
         # Error
         if req.status_code != SUCCESS_STATUS:
-            print("Error: requests failed. \n" + "url:" + url + " status code: " + req.status_code)
+            print("Error: requests failed. \n" + "url:" + url + " status code: " + str(req.status_code))
 
         html_doc = req.text
         soup = BeautifulSoup(html_doc, 'html.parser')
@@ -40,8 +46,8 @@ class Crawler:
         :param absolute_url: an entire address.
         An example of an absolute URL would look like this:
         https://www.rockchipfirmware.com
-        :param relative_url:
-        :return:
+        :param relative_url: relative url .
+        :return: an entire url of the joining.
         """
         return (absolute_url + '/' + relative_url).replace("\\", "/")
 
@@ -52,7 +58,9 @@ class Crawler:
         :param hash_collection: html hash codes collection.
         :param link: web-site link.
         :param soup: a beautiful soap object.
-        :return:
+        :return: first_time - True if it is the first visit in this site.
+        website_is_changed =  True if the information on the website
+        is changed.
         """
         remote_hash = None
         first_time = True if hash_collection.find_one({'url': link}) is None else False
@@ -82,59 +90,63 @@ class Crawler:
         :return: result -list of all collected firmware files metadata.
         """
 
-        print("*********************crawler started*********************c")
-        print("Root website: " + root_url + "/n")
+        print("*********************crawler started*********************")
+        print("Root website: " + root_url + "\n")
 
         result = []
         device_id = 1
-        soup = self.create_soup(root_url)
+        soup = self.__create_soup(root_url)
 
-        # find firmware download page
+        # Find firmware download page
         download_page_link = soup.find_all('a', title="Download")[0].get('href')
-        link = self.join_paths(root_url, download_page_link)
-        soup = self.create_soup(link)
+        link = self.__join_paths(root_url, download_page_link)
+        soup = self.__create_soup(link)
 
-        # looping through paging
+        # Looping through paging
         while True:
             print("crawl site: " + link)
 
-            first_time, website_is_changed = self.check_if_need_to_crawl(hash_collection, link, soup)
+            first_time, website_is_changed = self.__check_if_need_to_crawl(hash_collection, link, soup)
 
             # If it is the first crawling for this page or if the information on the website is changed
             if first_time or (not first_time and website_is_changed):
 
-                # find all firmware device links in a page
+                # Find all device links in a page
                 links = soup.find_all('td', class_="views-field views-field-title")  # name and link
-                versions = soup.find_all('td', class_="views-field views-field-field-android-version2")  # version
+                versions = soup.find_all('td', class_="views-field views-field-field-android-version2")  # versions
 
-                # looping through firmware downloads link
+                # Looping through firmware downloads link
                 for i in range(0, len(links)):
-                    data = self.collect_metadata(self.join_paths(root_url, links[i]), versions[i], device_id)
+                    data = self.__collect_metadata(root_url, links[i], versions[i], device_id)
                     print(data)
 
-                    # Insert dict to result and
+                    # Insert dict to result and device_id++
                     result.append(data)
                     device_id = device_id + 1
 
                 dict_hash = {'url': link, 'hash': hashlib.md5(soup.encode()).hexdigest()}
+
+                # if it's the first visit -save html hash code
                 if first_time:
                     hash_collection.insert_one(dict_hash)
+                # otherwise, update.
                 else:
                     hash_collection.findandupadteone({'url': link},
                                                      {"$set": {'hash': hashlib.md5(soup.encode()).hexdigest()}})
 
-            # find next page
+            # Find next page
             next_page = (soup.find('a', text="next"))
             if next_page is None: break
-            link = self.join_paths(root_url, next_page.get('href'))
-            soup = self.create_soup(link)
+            link = self.__join_paths(root_url, next_page.get('href'))
+            soup = self.__create_soup(link)
 
-        print("*********************crawler finished*********************c")
+        print("*********************crawler finished*********************")
         return result
 
-    def __collect_metadata(self, page_link, device_version, device_id):
+    def __collect_metadata(self, root_url, page_link, device_version, device_id):
         """
         Collecting data about the product.
+        :param root_url - where crawling is started from.
         :param page_link: url of the product page.
         :param device_version: device version.
         :param device_id: device id.
@@ -144,11 +156,11 @@ class Crawler:
 
         # Collect metadata
         device_name = page_link.text.replace('\n', '')
-        device_url = page_link.find('a').get('href')
+        device_url = self.__join_paths(root_url, page_link.find('a').get('href'))
         device_version = device_version.text.replace('\r\n', '').strip()
 
         # create soup
-        soup = self.create_soup(page_link)
+        soup = self.__create_soup(device_url)
 
         # Collect build date
         build_date_class = "field-name-changed-date"
@@ -172,6 +184,5 @@ class Crawler:
         data['build_date'] = build_date
         data['file_download_link'] = download_link
         data['file_name'] = download_name
-        data["date"] = datetime.datetime.utcnow()
 
         return data
