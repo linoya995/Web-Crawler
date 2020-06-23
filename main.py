@@ -69,7 +69,7 @@ def download_file(file_download_link, save_folder, file_name=''):
 
 def main(argv):
     """
-       main function.
+       main function
     """
     website_url = argv[0]  # url - to start crawling from
     download_files = True if (len(argv) > 2) and argv[1] == 'd' else False
